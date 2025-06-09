@@ -25,4 +25,5 @@ https://github.com/3ixi/autoscripts.git
 | [TCL+自动兑换E卡脚本](https://github.com/3ixi/autoscripts/blob/main/tcl_ek.py)|小程序|TCL+|`58 9 * * *`|E卡|抓包一次自动更新|
 | [爱坤机场自动签到脚本](https://github.com/3ixi/autoscripts/blob/main/ikuuu.py)|网站|[爱坤机场](https://ikuuu.org "转到爱坤机场")|`0 1 * * *`|流量|每次运行自动获取|
 | [同程旅行自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/tongcheng.py)|APP|同程旅行|`0 6 * * *`|里程|≥1个月|
-| [三福自动签到脚本](https://github.com/3ixi/autoscripts/blob/main/sanfu.py)|小程序|三福会员中心|`0 2 * * *`|福币|暂时未知(至少3天)|
+| [三福自动签到脚本](https://github.com/3ixi/autoscripts/blob/main/sanfu.py)|小程序|三福会员中心|`0 2 * * *`|福币|5天|
+| [云知积分有礼自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/yunzhi.py)|小程序|云知积分有礼|`0 2 * * *`|积分|理论上不过期|
