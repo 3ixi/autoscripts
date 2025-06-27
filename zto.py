@@ -2,47 +2,40 @@
 脚本: 中通小程序自动签到
 作者: 3iXi
 创建日期: 2025-06-24
+修改日期: 2025-06-27
+更新内容：更换为账号密码登录，Token永不过期
 ----------------------
-描述: 打开“中通快递”APP，开启抓包，登录，抓包域名https://yddapp.zto.com 请求头中的X-Token参数值。一定要注意，这里是用APP抓包，不是小程序。
+描述: 使用账号密码登录中通快递，自动签到获取积分；访问网页zto.com登录后在“个人中心”-“账户绑定”里设置密码。
 环境变量：
-        变量名：zto
-        变量值：抓包的X-Token参数值
-        多账号之间用#分隔
-需要依赖：PyJWT
+        变量名：ztozm
+        变量值：手机号&密码，多个账号用#分隔
 签到奖励：积分，可兑东西
 """
 
 import os
-import sys
-import json
 import time
 import requests
 from datetime import datetime, timedelta
 
-def check_pyjwt():
-    """检查PyJWT库是否已安装"""
+def parse_account_credentials(credentials):
+    """解析账号密码信息"""
     try:
-        import jwt
-        return True
-    except ImportError:
-        print("缺少PyJWT库，请使用以下命令安装：")
-        print("pip install PyJWT")
-        return False
-
-def parse_jwt_token(token):
-    """解析JWT令牌获取payload信息"""
-    try:
-        import jwt
-        decoded = jwt.decode(token, options={"verify_signature": False})
-        return decoded
+        if '&' not in credentials:
+            print("账号密码格式错误，应为：手机号&密码")
+            return None
+        
+        username, password = credentials.split('&', 1)
+        if not username or not password:
+            print("账号或密码不能为空")
+            return None
+            
+        return {
+            "username": username.strip(),
+            "password": password.strip()
+        }
     except Exception as e:
-        print(f"你填写的Token不正确，请重新抓包: {e}")
+        print(f"解析账号密码失败: {e}")
         return None
-
-def is_token_expired(exp_timestamp):
-    """检查Token是否已过期"""
-    current_time = int(time.time())
-    return current_time >= exp_timestamp
 
 def get_timestamp():
     """获取当前13位时间戳"""
@@ -59,39 +52,42 @@ def get_today_date():
     """获取今天的日期"""
     return datetime.now().strftime("%Y-%m-%d")
 
-def transfer_token(token):
-    """将APP Token转换为小程序Token"""
-    url = "https://yddapp.zto.com/transferTokenB2C"
+def login_with_password(username, password):
+    """使用账号密码登录获取Token"""
+    url = "https://hdgateway.zto.com/auth_account_loginByPassword"
     
     headers = {
-        "Host": "yddapp.zto.com",
-        "x-timestamp": get_timestamp(),
-        "Accept": "*/*",
-        "X-Ca-Version": "1",
-        "X-Token": token,
-        "Accept-Encoding": "gzip;q=1.0, compress;q=0.5",
-        "x-iam-token": token,
-        "clientsource": "ios",
-        "User-Agent": "ztoExpressClient/6.12.12 (cn.zto.ztoExpress; build:614; iOS 18.3.0) Alamofire/4.9.1",
-        "Accept-Language": "zh-Hans-CN;q=1.0, en-CN;q=0.9",
+        "Host": "hdgateway.zto.com",
         "Connection": "keep-alive",
-        "Content-Type": "application/json",
-        "mspappversion": "6.12.12"
+        "Content-Type": "application/json;charset=UTF-8",
+        "x-clientCode": "pc",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Safari/537.36",
+        "Accept": "application/json, text/plain, */*",
+        "Origin": "https://auth.zto.com",
+        "Referer": "https://auth.zto.com/",
+        "Accept-Encoding": "gzip, deflate, br, zstd",
+        "Accept-Language": "zh-CN,zh;q=0.9"
     }
     
-    payload = {"channel": "iosApp"}
+    payload = {
+        "userName": username,
+        "password": password,
+        "isAgainBind": False
+    }
     
     try:
         response = requests.post(url, headers=headers, json=payload, timeout=30)
         data = response.json()
         
-        if data.get("statusCode") == 200:
-            return data["result"]["cToken"]
+        if data.get("status") == True:
+            token = data["result"]["token"]
+            print(f"账号 {username} 登录成功")
+            return token
         else:
-            print(f"交换Token失败，原因：{data.get('message', '未知错误')}")
+            print(f"账号 {username} 登录失败: {data.get('message', '未知错误')}")
             return None
     except Exception as e:
-        print(f"交换Token请求失败: {e}")
+        print(f"账号 {username} 登录请求失败: {e}")
         return None
 
 def check_today_sign_status(token):
@@ -264,35 +260,27 @@ def get_member_points(token):
     except Exception as e:
         print(f"获取积分信息失败: {e}")
 
-def process_account(token):
+def process_account(credentials):
     """处理单个账户的签到流程"""
-    # 解析JWT获取账户信息
-    payload = parse_jwt_token(token)
-    if not payload:
-        print("解析JWT失败，请检查Token是否填写错误，跳过此账户")
+    # 解析账号密码
+    account_info = parse_account_credentials(credentials)
+    if not account_info:
+        print("解析账号密码失败，跳过此账户")
         return
     
-    mobile = payload.get("mobile", "未知")
-    exp = payload.get("exp", 0)
+    username = account_info["username"]
+    password = account_info["password"]
     
-    # 检查Token是否过期
-    if is_token_expired(exp):
-        print(f"手机号{mobile}的Token已过期，请更新")
+    print(f"\n开始处理账户: {username}")
+    
+    # 使用账号密码登录获取Token
+    token = login_with_password(username, password)
+    if not token:
+        print("登录失败，跳过此账户")
         return
-    
-    print(f"\n开始处理账户: {mobile}")
-    
-    # 尝试更新Token
-    new_token = transfer_token(token)
-    if new_token:
-        print("Token更新成功")
-        active_token = new_token
-    else:
-        print("将尝试使用APP Token进行请求")
-        active_token = token
     
     # 检查今天是否签到
-    sign_status = check_today_sign_status(active_token)
+    sign_status = check_today_sign_status(token)
     if not sign_status:
         print("无法获取签到状态，跳过此账户")
         return
@@ -301,46 +289,43 @@ def process_account(token):
         print(f"今天已签到，当前积分{sign_status['total_points']}")
     else:
         print("今天未签到，开始签到...")
-        sign_in(active_token)
+        sign_in(token)
     
     # 检查并领取补签卡
-    check_and_claim_resign_card(active_token)
+    check_and_claim_resign_card(token)
     
     # 获取积分信息
-    get_member_points(active_token)
+    get_member_points(token)
 
 def main():
     """主函数"""
     print("中通快递自动签到脚本启动...")
     
-    # 检查PyJWT库
-    if not check_pyjwt():
-        return
-    
     # 获取环境变量
-    zto_tokens = os.getenv("zto")
-    if not zto_tokens:
-        print("未找到环境变量'zto'，请先设置")
+    zto_credentials = os.getenv("ztozm")
+    if not zto_credentials:
+        print("未找到环境变量'ztozm'，请先设置")
+        print("格式：手机号&密码，多个账号用#分隔")
         return
     
-    # 分割多个Token
-    tokens = zto_tokens.split("#")
-    print(f"共找到{len(tokens)}个Token")
+    # 分割多个账号密码
+    credentials_list = zto_credentials.split("#")
+    print(f"共找到{len(credentials_list)}个账号")
     
     # 处理每个账户
-    for i, token in enumerate(tokens, 1):
-        token = token.strip()
-        if not token:
+    for i, credentials in enumerate(credentials_list, 1):
+        credentials = credentials.strip()
+        if not credentials:
             continue
         
         print(f"\n{'='*30}")
         print(f"处理第{i}个账户")
         print(f"{'='*30}")
         
-        process_account(token)
+        process_account(credentials)
         
         # 为避免请求过于频繁，添加延时
-        if i < len(tokens):
+        if i < len(credentials_list):
             time.sleep(2)
     
     print(f"\n{'='*30}")
