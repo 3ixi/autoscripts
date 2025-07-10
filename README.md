@@ -29,3 +29,4 @@ https://github.com/3ixi/autoscripts.git
 | [云知积分有礼自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/yunzhi.py)|小程序|云知积分有礼|`0 2 * * *`|积分|理论上不过期|
 | [文明积分平台自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/wmjf.py)|小程序|文明积分平台|`0 2 * * *`|积分(仅限新余市使用)|暂时未知|
 | [中通快递小程序签到脚本](https://github.com/3ixi/autoscripts/blob/main/zto.py)|小程序|中通快递|`0 2 * * *`|积分|不过期|
+| [捷停车小程序自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/jietingche.py)|小程序|捷停车|`0 2 * * *`|积分|30天|
