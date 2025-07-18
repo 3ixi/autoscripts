@@ -1,21 +1,153 @@
-import zlib
-import base64
-
 """
 脚本: iKuuu爱坤机场签到脚本
 作者: 3iXi
 创建时间: 2025-03-12
-最后更新: 2025-05-22
-版本: 1.0.3
+版本: 1.0.5
 需要依赖：aiohttp
-更新说明: 增加剩余流量获取
-----------------------
 描述:打开网站https://ikuuu.org 注册账号，环境变量填写邮箱和密码（密码不要带&和#符号）
 环境变量：
         变量名：ikuuu
-        变量格式：email&passwd
+        变量值：email&passwd
         多账号之间用#分隔：email&passwd#email2&passwd2#email3&passwd3
 签到奖励：VPN流量
+----------------------
+更新时间: 2025-07-18
+更新说明: 修复无法登录的问题
+更新时间: 2025-05-25
+更新说明: 增加剩余流量获取
 """
 
-exec(zlib.decompress(base64.b64decode(f"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")))
+import requests
+import json
+import os
+import yaml
+from bs4 import BeautifulSoup
+
+def get_accounts_from_env():
+    accounts_str = os.getenv('ikuuu', '')
+    if not accounts_str:
+        raise ValueError("未找到环境变量 'ikuuu'")
+    
+    accounts = []
+    account_pairs = accounts_str.split('#')
+    for pair in account_pairs:
+        if '&' in pair:
+            email, passwd = pair.split('&', 1)
+            accounts.append({'email': email.strip(), 'passwd': passwd.strip()})
+    
+    print(f"本轮获取到 {len(accounts)} 个账号")
+    return accounts
+
+DOMAINS = ['ikuuu.de', 'ikuuu.one', 'ikuuu.pw', 'ikuuu.org']
+
+header = {
+    'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36',
+    'accept': 'application/json, text/javascript, */*; q=0.01',
+    'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8',
+    'content-type': 'application/x-www-form-urlencoded; charset=UTF-8',
+    'x-requested-with': 'XMLHttpRequest',
+    'referer': '',
+    'origin': ''
+}
+
+def get_available_domain():
+    for domain in DOMAINS:
+        try:
+            test_url = f'https://{domain}'
+            response = requests.get(test_url, headers={'User-Agent': header['user-agent']}, timeout=5)
+            if response.status_code == 200:
+                print(f'检测到域名 {domain} 可用')
+                return domain
+        except Exception as e:
+            print(f'域名 {domain} 不可用: {e}')
+            continue
+    raise Exception('所有域名都不可用，请检查网络连接')
+
+def check_in(email, passwd):
+    data = {
+        'email': email,
+        'passwd': passwd
+    }
+
+    try:
+        domain = get_available_domain()
+        login_url = f'https://{domain}/auth/login'
+        check_url = f'https://{domain}/user/checkin'
+        user_url = f'https://{domain}/user'
+        
+        current_header = header.copy()
+        current_header['origin'] = f'https://{domain}'
+        current_header['referer'] = f'https://{domain}/auth/login'
+        
+        print(f'[{email}] 使用域名 {domain} 进行登录...')
+        
+        session = requests.session()
+        
+        response = session.post(
+            url=login_url, 
+            headers=current_header, 
+            data=data,
+            timeout=15
+        )
+        
+        if response.status_code != 200:
+            raise Exception(f'登录失败，状态码: {response.status_code}')
+            
+        response_data = response.json()
+        print(response_data['msg'])
+        
+        result = session.post(
+            url=check_url, 
+            headers=current_header,
+            timeout=15
+        )
+        
+        if result.status_code != 200:
+            raise Exception(f'签到失败，状态码: {result.status_code}')
+            
+        result_data = result.json()
+        content = result_data['msg']
+        
+        user_page = session.get(
+            url=user_url, 
+            headers=current_header,
+            timeout=15
+        )
+        
+        soup = BeautifulSoup(user_page.text, 'html.parser')
+        flow = None
+        flow_unit = None
+        
+        cards = soup.find_all('div', class_='card card-statistic-2')
+        for card in cards:
+            h4 = card.find('h4')
+            if h4 and '剩余流量' in h4.text:
+                counter_span = card.find('span', class_='counter')
+                if counter_span:
+                    flow = counter_span.text.strip()
+                    if counter_span.next_sibling:
+                        flow_unit = counter_span.next_sibling.strip()
+                    break
+        return content, flow, flow_unit
+    except Exception as e:
+        print(f'发生错误: {e}')
+        return '签到失败', None, None
+
+def main():
+    try:
+        accounts = get_accounts_from_env()
+        for account in accounts:
+            email = account['email']
+            passwd = account['passwd']
+            print(f"\n开始处理账号: {email}")
+            content, flow, flow_unit = check_in(email, passwd)
+            print(f'签到结果: {content}')
+            if flow:
+                print(f'账号剩余流量: {flow}{flow_unit if flow_unit else ""}')
+            else:
+                print('未能获取账号流量信息')
+    except Exception as e:
+        print(f'程序出错: {e}')
+
+if __name__ == '__main__':
+    main()
