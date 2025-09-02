@@ -2,8 +2,8 @@
 脚本: iKuuu爱坤机场签到脚本
 作者: 3iXi
 创建时间: 2025-03-12
-版本: 1.0.5
-需要依赖：aiohttp
+版本: 1.0.6
+需要依赖：beautifulsoup4
 描述:打开网站https://ikuuu.org 注册账号，环境变量填写邮箱和密码（密码不要带&和#符号）
 环境变量：
         变量名：ikuuu
@@ -11,17 +11,23 @@
         多账号之间用#分隔：email&passwd#email2&passwd2#email3&passwd3
 签到奖励：VPN流量
 ----------------------
-更新时间: 2025-07-18
-更新说明: 修复无法登录的问题
-更新时间: 2025-05-25
-更新说明: 增加剩余流量获取
+更新记录: 
+【2025-09-02】修复无法获取剩余流量的问题
+【2025-07-18】修复无法登录的问题
+【2025-05-25】增加剩余流量获取
 """
+
+try:
+    from bs4 import BeautifulSoup
+except ImportError:
+    print("错误：未检测到需要的依赖，请安装依赖：beautifulsoup4")
+    exit(1)
 
 import requests
 import json
 import os
 import yaml
-from bs4 import BeautifulSoup
+import base64
 
 def get_accounts_from_env():
     accounts_str = os.getenv('ikuuu', '')
@@ -109,15 +115,73 @@ def check_in(email, passwd):
         content = result_data['msg']
         
         user_page = session.get(
-            url=user_url, 
+            url=user_url,
             headers=current_header,
             timeout=15
         )
-        
-        soup = BeautifulSoup(user_page.text, 'html.parser')
+
+        html_content = None
+        raw_text = user_page.text or ''
+
+        try:
+            j = user_page.json()
+            if isinstance(j, dict):
+                for v in j.values():
+                    if not isinstance(v, str):
+                        continue
+                    s = v.strip()
+                    if not s:
+                        continue
+                    try:
+                        decoded = base64.b64decode(s)
+                        if b'<' in decoded[:120]:
+                            html_content = decoded.decode('utf-8', errors='ignore')
+                            break
+                    except Exception:
+                        continue
+        except Exception:
+            # not json -> ignore
+            pass
+
+        if html_content is None:
+            import re
+            m = re.search(r'originBody\s*=\s*["\']([A-Za-z0-9+/=\n\r]+)["\']', raw_text, re.S)
+            if m:
+                b64 = m.group(1).replace('\n', '').replace('\r', '')
+                try:
+                    decoded = base64.b64decode(b64)
+                    if b'<' in decoded[:120]:
+                        html_content = decoded.decode('utf-8', errors='ignore')
+                except Exception:
+                    html_content = None
+
+        if html_content is None:
+            import re
+            m2 = re.search(r'data-clipboard(?:-text)?=["\']([A-Za-z0-9+/=]+)["\']', raw_text)
+            if m2:
+                b64 = m2.group(1)
+                try:
+                    decoded = base64.b64decode(b64)
+                    if b'<' in decoded[:120]:
+                        html_content = decoded.decode('utf-8', errors='ignore')
+                except Exception:
+                    html_content = None
+
+        if html_content is None:
+            try:
+                decoded = base64.b64decode(raw_text)
+                if b'<' in decoded[:120]:
+                    html_content = decoded.decode('utf-8', errors='ignore')
+            except Exception:
+                html_content = None
+
+        if not html_content:
+            html_content = raw_text
+
+        soup = BeautifulSoup(html_content, 'html.parser')
         flow = None
         flow_unit = None
-        
+
         cards = soup.find_all('div', class_='card card-statistic-2')
         for card in cards:
             h4 = card.find('h4')
@@ -125,8 +189,14 @@ def check_in(email, passwd):
                 counter_span = card.find('span', class_='counter')
                 if counter_span:
                     flow = counter_span.text.strip()
-                    if counter_span.next_sibling:
-                        flow_unit = counter_span.next_sibling.strip()
+                    unit_text = ''
+                    if counter_span.next_sibling and isinstance(counter_span.next_sibling, str):
+                        unit_text = counter_span.next_sibling.strip()
+                    if not unit_text:
+                        small = card.find('small')
+                        if small:
+                            unit_text = small.text.strip()
+                    flow_unit = unit_text
                     break
         return content, flow, flow_unit
     except Exception as e:
