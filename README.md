@@ -1,4 +1,4 @@
-# 🚀 AutoScripts
+# 🖼️ AutoScripts
 
 > 原创Python脚本集合，适用于青龙面板，所有脚本使用说明请看脚本内注释
 
@@ -27,5 +27,6 @@ https://github.com/3ixi/autoscripts.git
 | [中通快递签到脚本](https://github.com/3ixi/autoscripts/blob/main/zto.py)|小程序|✅|中通快递|积分|不过期|
 | [捷停车自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/jietingche.py)|小程序|✅|捷停车|积分|30天|
 | [伊的家自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/yidejia.py)|小程序|✅|伊的家|伊币、消费积分|1年|
+| [雀巢会员俱乐部自动任务脚本](https://github.com/3ixi/autoscripts/blob/main/quechao.py)|小程序|✅|雀巢会员俱乐部|雀币、抽奖实物|30天|
 
 **状态说明：** ✅ 正常可用 | ❌ 已失效 | ⚠️ 部分功能受限
