@@ -21,6 +21,8 @@ import sys
 import io
 import yaml
 import base64
+import shutil
+import subprocess
 import random
 import time
 import hashlib
@@ -100,6 +102,9 @@ def get_accounts_from_env():
     return accounts
 
 DOMAINS = ['ikuuu.org', 'ikuuu.pw', 'ikuuu.de', 'ikuuu.one']
+DOMAIN_DISCOVERY_URL = 'https://ikuuu.ch/'
+DOMAIN_DISCOVERY_HOST = 'ikuuu.ch'
+_AVAILABLE_DOMAIN_CACHE = None
 
 header = {
     'user-agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -111,8 +116,6 @@ header = {
 
 class LotParser:
     def __init__(self):
-        # These constants change over time in Geetest's obfuscated JS.
-        # Synced from current gcaptcha4.js / GeekedTest implementation.
         self.mapping = {"n[3:5]+n[9:11]": "n[7:12]"}
         self.lot = []
         self.lot_res = []
@@ -716,17 +719,195 @@ class GeetestSolver:
         )
 
 
-def get_available_domain():
-    for domain in DOMAINS:
-        try:
-            test_url = f'https://{domain}'
-            response = requests.get(test_url, headers={'User-Agent': header['user-agent']}, timeout=5)
-            if response.status_code == 200:
-                print(f'检测到域名 {domain} 可用')
-                return domain
-        except Exception as e:
-            print(f'域名 {domain} 不可用: {e}')
+def normalize_ikuuu_domain(value: str):
+    if not value:
+        return None
+    raw = str(value).strip().strip('\'"<>[](){}，,。.;；')
+    if not raw:
+        return None
+    if raw.startswith('//'):
+        raw = 'https:' + raw
+    if not raw.startswith(('http://', 'https://')):
+        raw = 'https://' + raw
+    parsed = urllib.parse.urlparse(raw)
+    domain = (parsed.netloc or parsed.path.split('/')[0]).lower().strip()
+    if ':' in domain:
+        domain = domain.split(':', 1)[0]
+    if not re.fullmatch(r'ikuuu\.[a-z0-9.-]+', domain):
+        return None
+    if domain == DOMAIN_DISCOVERY_HOST:
+        return None
+    return domain
+
+
+def unique_domains(domains):
+    result = []
+    seen = set()
+    for item in domains:
+        domain = normalize_ikuuu_domain(item)
+        if not domain or domain in seen:
             continue
+        seen.add(domain)
+        result.append(domain)
+    return result
+
+
+def extract_domains_with_node_vm(html: str):
+    node_path = shutil.which('node')
+    if not node_path:
+        return []
+
+    script_match = re.search(r'<script>([\s\S]*?_0x23763f[\s\S]*?)</script>', html or '', re.I)
+    if not script_match:
+        return []
+
+    runner = r"""
+const fs = require('fs');
+const vm = require('vm');
+const jsInput = fs.readFileSync(0, 'utf8');
+const marker = 'const _0x23763f=[_0x1c49a4,_0x41e280];';
+if (!jsInput.includes(marker)) {
+  process.stdout.write('[]');
+  process.exit(0);
+}
+const js = jsInput.replace(marker, marker + 'globalThis.__domains=_0x23763f;throw new Error("STOP_AFTER_DOMAINS");');
+const sandbox = {
+  window: { location: { href: 'https://ikuuu.ch/' }, setInterval() {} },
+  document: { getElementById() { return null; }, querySelectorAll() { return []; } },
+  fetch() { return Promise.resolve({}); },
+  AbortController: class { constructor(){ this.signal = {}; } abort(){} },
+  setTimeout() { return 1; },
+  clearTimeout() {},
+};
+sandbox.globalThis = sandbox;
+try {
+  vm.runInNewContext(js, sandbox, { timeout: 5000 });
+} catch (e) {
+  if (e.message !== 'STOP_AFTER_DOMAINS') {
+    process.stdout.write('[]');
+    process.exit(0);
+  }
+}
+process.stdout.write(JSON.stringify(sandbox.__domains || []));
+"""
+    try:
+        result = subprocess.run(
+            [node_path, '-e', runner],
+            input=script_match.group(1),
+            text=True,
+            capture_output=True,
+            timeout=8,
+            check=False,
+        )
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        decoded = json.loads(result.stdout)
+    except Exception:
+        return []
+
+    candidates = []
+    if isinstance(decoded, list):
+        for item in decoded:
+            if isinstance(item, dict):
+                candidates.append(item.get('url', ''))
+                candidates.append(item.get('name', ''))
+            else:
+                candidates.append(str(item))
+    return unique_domains(candidates)
+
+
+def extract_latest_domains(html: str):
+    candidates = []
+    soup = BeautifulSoup(html or '', 'html.parser')
+
+    domain_list = soup.find(id='domain-list')
+    search_scope = domain_list if domain_list else soup
+    for tag in search_scope.find_all(['a', 'h3']):
+        if tag.name == 'a':
+            candidates.append(tag.get('href', ''))
+        candidates.append(tag.get_text(' ', strip=True))
+
+    candidates.extend(re.findall(r'https?://(?:www\.)?ikuuu\.[a-z0-9.-]+(?:/[^\s"\'<>]*)?', html or '', flags=re.I))
+    candidates.extend(re.findall(r'\bikuuu\.[a-z0-9.-]+\b', html or '', flags=re.I))
+    domains = unique_domains(candidates)
+    if domains:
+        return domains
+    return extract_domains_with_node_vm(html)
+
+
+def get_response_text(response):
+    if not response.encoding or response.encoding.lower() == 'iso-8859-1':
+        response.encoding = 'utf-8'
+    return response.text
+
+
+def fetch_latest_domains(timeout=10):
+    response = requests.get(
+        DOMAIN_DISCOVERY_URL,
+        headers={
+            'User-Agent': header['user-agent'],
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        },
+        timeout=timeout,
+        allow_redirects=True,
+    )
+    response.raise_for_status()
+    domains = extract_latest_domains(get_response_text(response))
+    if domains:
+        print(f'从 {DOMAIN_DISCOVERY_URL} 获取到最新域名: {", ".join(domains)}')
+    else:
+        print(f'已访问 {DOMAIN_DISCOVERY_URL}，但页面中未解析到可用候选域名')
+    return domains
+
+
+def is_domain_available(domain: str, timeout=6):
+    urls = (f'https://{domain}/auth/login', f'https://{domain}/')
+    last_error = None
+    for url in urls:
+        try:
+            response = requests.get(
+                url,
+                headers={'User-Agent': header['user-agent']},
+                timeout=timeout,
+                allow_redirects=True,
+            )
+            if 200 <= response.status_code < 400:
+                print(f'检测到域名 {domain} 可用')
+                return True
+            last_error = f'状态码 {response.status_code}'
+        except Exception as exc:
+            last_error = str(exc)
+    print(f'域名 {domain} 不可用: {last_error}')
+    return False
+
+
+def get_available_domain():
+    global _AVAILABLE_DOMAIN_CACHE
+    if _AVAILABLE_DOMAIN_CACHE and is_domain_available(_AVAILABLE_DOMAIN_CACHE):
+        return _AVAILABLE_DOMAIN_CACHE
+
+    fallback_to_static = False
+    try:
+        domains = fetch_latest_domains()
+    except Exception as exc:
+        print(f'访问 {DOMAIN_DISCOVERY_URL} 失败，降级使用内置 DOMAINS: {exc}')
+        domains = []
+        fallback_to_static = True
+
+    for domain in domains:
+        if is_domain_available(domain):
+            _AVAILABLE_DOMAIN_CACHE = domain
+            return domain
+
+    if domains:
+        print('最新域名均不可用，继续尝试内置 DOMAINS')
+    elif not fallback_to_static:
+        print('未获取到最新域名，继续尝试内置 DOMAINS')
+
+    for domain in DOMAINS:
+        if is_domain_available(domain):
+            _AVAILABLE_DOMAIN_CACHE = domain
+            return domain
     raise Exception('所有域名都不可用，请检查网络连接')
 
 def check_in(email, passwd):
@@ -737,7 +918,6 @@ def check_in(email, passwd):
         user_url = f'https://{domain}/user'
         
         session = requests.session()
-        # Initialize session by visiting login page
         session.get(f'https://{domain}/auth/login', headers=header, timeout=10)
 
         print(f'[{email}] 开始破解验证码...')
@@ -745,7 +925,6 @@ def check_in(email, passwd):
         captcha_result = solver.solve()
         print(f'[{email}] 验证码破解成功')
 
-        # Fix: ensure data is flat for application/x-www-form-urlencoded
         data = {
             'email': email,
             'passwd': passwd,
@@ -806,7 +985,6 @@ def check_in(email, passwd):
         )
 
         html_content = user_page.text
-        # Base64 decoding logic from original script
         try:
             import base64
             import re
